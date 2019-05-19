@@ -1,0 +1,11 @@
+# Compiled
+*.elc
+
+# Packaging
+.cask
+
+# Backup files
+*~
+
+# Node modules
+node_modules/

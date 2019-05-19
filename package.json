@@ -1,0 +1,26 @@
+{
+  "name": "simple-jieba-server",
+  "version": "1.0.0",
+  "description": "A simple wrapper of nodejieba with JSONRPC support",
+  "main": "simple_jieba_server.js",
+  "dependencies": {
+    "nodejieba": "^2.3.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cireu/jieba.el.git"
+  },
+  "keywords": [
+    "chinese"
+  ],
+  "author": "Zhu Zihao",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/cireu/jieba.el/issues"
+  },
+  "homepage": "https://github.com/cireu/jieba.el#readme"
+}
