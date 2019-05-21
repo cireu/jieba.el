@@ -1,50 +1,38 @@
+const { RPCConnection } = require('./stdio-jrpc')
 const jieba = require('nodejieba')
 
-const rpcReturn = (id, retval) => JSON.stringify({
-  jsonrpc: '2.0',
-  id: id,
-  result: retval,
-})
-
-const rpcError = (id, errCode, msg) => JSON.stringify({
-  jsonrpc: '2.0',
-  id: id,
-  error: { code: errCode, message: msg },
-})
-
-const rpcInvalidRequest = () => rpcError(null, -32600, 'Invalid Request.')
-
-const handleCut = (s) => {
-  try {
-    s = JSON.parse(s)
-    let { jsonrpc, id, method, params } = s
-    if (jsonrpc !== '2.0' || method !== 'split') {
-      process.stdout.write(rpcInvalidRequest())
-    } else {
-      let words = jieba.cut(params)
-      process.stdout.write(rpcReturn(id, words))
-    }
-  } catch (e) {
-    console.error(e)
-    process.stdout.write(rpcInvalidRequest())
-  }
-}
-
+// Entry
 const main = () => {
-  jieba.load()
-  process.stdin.setEncoding('utf-8')
-  process.stdin.on('readable', () => {
-    let data = ''
-    let chunck
-    while (true) {
-      chunck = process.stdin.read()
-      if (chunck === null) {
-        break
-      } else {
-        data += chunck
+
+  let conn = RPCConnection.open()
+
+  conn.handle('hello', (_params) => {
+    jieba.load()
+    conn.sendResult(true)
+  })
+
+  conn.handle('split', (params) => {
+    // Using tag method will get the best result,
+    // even better than cut and cutHMM.
+    let result = jieba.tag(params).map((it, _idx, _arr) => it.word)
+    conn.sendResult(result)
+  })
+
+  conn.handle('loadDict', (params) => {
+    let success = 0
+    let failed = 0
+    for (dict of params) {
+      try {
+        jieba.load({
+          userDict: dict
+        })
+        success += 1
+      } catch (e) {
+        console.error(e)
+        failed += 1
       }
     }
-    handleCut(data)
+    conn.sendResult(`[JIEBA] Try to load ${params.length} Dict(s), ${success} successed, ${failed} failed.`)
   })
 }
 
