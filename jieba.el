@@ -1,11 +1,11 @@
-;;; jieba.el  --- Description  -*- lexical-binding: t -*-
+;;; jieba.el  --- Use nodejieba chinese segmentation in Emacs  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2019 Zhu Zihao
 
 ;; Author: Zhu Zihao <all_but_last@163.com>
-;; URL:
+;; URL: https://github.com/cireu/jieba.el
 ;; Version: 0.0.1
-;; Package-Requires: ((emacs "25.2"))
+;; Package-Requires: ((emacs "25.2") (jsonrpc "1.0.7"))
 ;; Keywords: chinese
 
 ;; This file is NOT a part of GNU Emacs.
@@ -25,7 +25,8 @@
 
 ;;; Commentary:
 
-;;
+;; This package use JSONRPC protocol to contact with a simple wrapper
+;; of nodejieba, A chinese word segmentation tool.
 
 ;;; Code:
 
@@ -34,7 +35,9 @@
 (require 'thingatpt)
 
 (eval-when-compile
-  (require 'pcase))
+  (require 'cl-lib))
+
+;;; Customize
 
 (defgroup jieba ()
   ""
@@ -42,21 +45,26 @@
   :prefix "jieba-")
 
 (defcustom jieba-server-start-args
-  (list
-   "node"
-   (let* ((this-file (cond
-                      (load-in-progress load-file-name)
-                      ((and (boundp 'byte-compile-current-file)
-                            byte-compile-current-file)
-                       byte-compile-current-file)
-                      (:else (buffer-file-name))))
-          (dir (file-name-directory this-file)))
-     (expand-file-name "simple_jieba_server.js" dir)))
+  `("node"
+    ,(let* ((this-file (cond
+                        (load-in-progress load-file-name)
+                        ((and (boundp 'byte-compile-current-file)
+                              byte-compile-current-file)
+                         byte-compile-current-file)
+                        (t (buffer-file-name))))
+            (dir (file-name-directory this-file)))
+       (expand-file-name "simple-jieba-server.js" dir)))
   ""
   :type 'list
   :group 'jieba)
 
-;;; JSONRPC setup
+(defcustom jieba-split-algorithm 'mix
+  ""
+  :type '(choice (const :tag "MP Segment Algorithm" mp)
+                 (const :tag "HMM Segment Algorithm" hmm)
+                 (const :tag "Mix Segment Algorithm" mix)))
+
+;;; JSONRPC Setup
 
 (defvar jieba--current-connection nil)
 
@@ -71,11 +79,13 @@
           (json-null nil))
       (json-read-from-string s))))
 
-(defclass jieba-connection (jsonrpc-process-connection) ())
+(defclass jieba-connection (jsonrpc-process-connection) ()
+  "A connection based on stdio to contact with jieba server.")
 
 (cl-defmethod jsonrpc-connection-send ((conn jieba-connection)
                                        &rest args
                                        &key method &allow-other-keys)
+  "Override send method, because we just send JSON without HTTP headers."
   (when method
     (plist-put args :method
                (cond ((keywordp method) (substring (symbol-name method) 1))
@@ -88,11 +98,14 @@
 
 (cl-defmethod initialize-instance ((conn jieba-connection) _slots)
   (cl-call-next-method)
+  ;; Set a new process filter for `jieba-connection'.
+  ;; Because our messages don't contain HTTP headers.
   (let ((proc (jsonrpc--process conn)))
     (when proc
       (set-process-filter proc #'jieba--process-filter))))
 
 (defun jieba--process-filter (proc string)
+  "Called when new data STRING has arrived for PROC."
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
       (let ((inhibit-read-only t))
@@ -123,66 +136,133 @@
                             :connection-type 'pipe
                             :stderr (get-buffer-create
                                      (format "*%s stderr*" name)))))))
+    ;; Ask server to load default dict.
+    (jsonrpc-async-request conn :hello nil)
     (setq jieba--current-connection conn)))
 
-(defun jieba-ensure (&optional force-restart?)
+(defun jieba-ensure (&optional interactive-restart?)
   (interactive "P")
   (if (not (and (cl-typep jieba--current-connection 'jsonrpc-connection)
                 (jsonrpc-running-p jieba--current-connection)))
       (jieba--connect)
-    (when force-restart?
+    (when (and
+           interactive-restart?
+           (y-or-n-p "Jieba server is running now, do you want to restart it?"))
       (jsonrpc-shutdown jieba--current-connection)
       (jieba--connect))))
 
+(defun jieba--assert-server (&optional interactive-start?)
+  "Assert the server is running, throw an error when assertion failed.
+
+If INTERACTIVE-START? is non-nil, will ask user to start server first."
+  (when (not (and (cl-typep jieba--current-connection 'jieba-connection)
+                  (jsonrpc-running-p jieba--current-connection)))
+    (cond
+     ((and interactive-start?
+           (y-or-n-p "Do you want to start jieba server?"))
+      (jieba-ensure))
+     (t
+      (error "[JIEBA] Jieba server is not running now!")))))
+
+;;; Data Cache
+
+(defvar jieba--cache (make-hash-table :test #'equal))
+
+(defun jieba--cache-gc ())
+
 ;;;
 
-(defsubst jieba-split-chinese-word-sync (str)
-  (jsonrpc-request jieba--current-connection :split
-                   str))
+(defun jieba-load-dict (dicts)
+  (jsonrpc-async-request jieba--current-connection :loadDict
+                         (vconcat dicts)
+                         :success-fn (lambda (result)
+                                       (message "[JIEBA] %s" result))
+                         :error-fn (cl-function
+                                    (lambda (&key message data &allow-other-keys)
+                                      (error "[JIEBA] Remote Error: %s %s"
+                                             message data)))))
 
 ;;; Export function
 
+(defvar jieba--single-chinese-char-re "\\cC")
+
+(defun jieba-split-chinese-word (str)
+  (let* ((not-found (make-symbol "hash-not-found"))
+         (result (gethash str jieba--cache not-found)))
+    (if (eq result not-found)
+        (prog1
+            (setq result (jsonrpc-request
+                          jieba--current-connection :split
+                          str))
+          (puthash str result jieba--cache))
+      result)))
+
 (defsubst jieba-chinese-word? (s)
-  (string-match-p (format "\\cC\\{%d\\}"
-                          (length s)) s))
+  "Return t when S is a real chinese word (All its chars are chinese char.)"
+  (and (string-match-p (format "%s\\{%d\\}"
+                               jieba--single-chinese-char-re
+                               (length s)) s)
+       t))
 
 (defalias 'jieba-chinese-word-p 'jieba-chinese-word?)
 
 ;;;###autoload
 (defun jieba-chinese-word-atpt-bounds ()
-  (let ((word (thing-at-point 'word)))
-    (when (and word
-               (jieba-chinese-word? word))
-      (pcase-let* ((`(,beg . ,end) (bounds-of-thing-at-point 'word))
-                   (cur (point))
-                   (index beg)
-                   (old-index beg))
-        (catch 'return
-          (mapc (lambda (x)
-                  (setq index (+ index (length x)))
-                  (cond
-                   ((and (>= cur old-index)
-                         (< cur index))
-                    (throw 'return (cons old-index index)))
-                   ((= index end)
-                    (throw 'return (cons old-index index)))
-                   (t
-                    (setq old-index index))))
-                (jieba-split-chinese-word-sync word)))))))
+  (jieba--assert-server)
+  (pcase (bounds-of-thing-at-point 'word)
+    (`(,beg . ,end)
+     (let ((word (buffer-substring-no-properties beg end)))
+       (when (jieba-chinese-word? word)
+         (let ((cur (point))
+               (index beg)
+               (old-index beg))
+           (cl-block retval
+             (mapc (lambda (x)
+                     (cl-incf index (length x))
+                     (cond
+                      ((or (< old-index cur index)
+                           (= old-index cur))
+                       (cl-return-from retval (cons old-index index)))
+                      ((= index end)
+                       (cl-return-from retval (cons old-index index)))
+                      (t
+                       (setq old-index index))))
+                   (jieba-split-chinese-word word)))))))))
+
 
 (defun jieba--move-chinese-word (backward?)
-  (pcase-let* ((`(,beg . ,end) (jieba-chinese-word-atpt-bounds))
-               (dest (if backward? beg end))
-               (cur (point))
-               (arg (if backward? -1 1)))
-    (cond
-     ((null (or beg end))
-      (forward-word arg))
-     ((= dest cur)
-      (forward-char arg)
-      (jieba--move-chinese-word backward?))
-     (t
-      (goto-char dest)))))
+  (cl-labels ((find-dest
+               (backward?)
+               (pcase (jieba-chinese-word-atpt-bounds)
+                 (`(,beg . ,end)
+                  (if backward? beg end))))
+
+              (try-backward-move
+               (backward?)
+               (let (pnt beg)
+                 (save-excursion
+                   (if backward? (backward-char) (forward-char))
+                   (setq pnt (point))
+                   (setq beg (find-dest backward?)))
+                 (goto-char pnt)
+                 (when (or (null beg)
+                           (not (= beg pnt)))
+                   (jieba--move-chinese-word backward?)))))
+
+    (let* ((dest (find-dest backward?))
+           (cur (point)))
+      (cond
+       ((null dest)
+        (if backward?
+            (if (looking-back jieba--single-chinese-char-re
+                              (car (bounds-of-thing-at-point 'word)))
+                (try-backward-move backward?)
+              (backward-word))
+          (forward-word)))
+       ((= dest cur)
+        (try-backward-move backward?))
+       (t
+        (goto-char dest))))))
 
 ;;;###autoload
 (defun jieba-forward-word (arg)
@@ -196,36 +276,34 @@
   (interactive "p")
   (jieba-forward-word (- arg)))
 
+;;;###autoload
+(defun jieba-mark-word ()
+  (interactive)
+  (end-of-thing 'jieba-chinese-word)
+  (set-mark (point))
+  (beginning-of-thing 'jieba-chinese-word))
+
 ;;; Minor mode
 
+;;;###autoload
 (defvar jieba-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map [remap forward-word] #'jieba-forward-word)
     (define-key map [remap backward-word] #'jieba-backward-word)
     map))
 
-(defun turn-on-jieba-mode ()
-  (jieba-mode))
-
-(defun turn-off-jieba-mode ()
-  (jieba-mode -1))
-
 ;;;###autoload
 (define-minor-mode jieba-mode
   ""
+  :global t
   :keymap jieba-mode-map
-  :lighter " Jieba")
-
-;;;###autoload
-(define-globalized-minor-mode global-jieba-mode jieba-mode turn-on-jieba-mode)
+  :lighter " Jieba"
+  (when jieba-mode (jieba-ensure t)))
 
 (provide 'jieba)
 
 ;; Define text object
 (put 'jieba-chinese-word
      'bounds-of-thing-at-point 'jieba-chinese-word-atpt-bounds)
-
-;; Start server
-(jieba-ensure t)
 
 ;;; jieba.el ends here
