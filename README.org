@@ -10,7 +10,7 @@
 
 注: 该图片文字来源于[[https://zh.wikipedia.org/zh-cn/GNU%25E9%2580%259A%25E7%2594%25A8%25E5%2585%25AC%25E5%2585%25B1%25E8%25AE%25B8%25E5%258F%25AF%25E8%25AF%2581][维基百科]], 遵循CC BY-SA 3.0条款使用
 
-[[file:screenshot.gif][Screenshot]]
+[[file:screenshot.gif]]
 
 * 安装方式
 
@@ -64,3 +64,8 @@ npm install -g --unsafe-perm nodejieba
 * 协助开发
 
 欢迎提交PR和Issue report.
+
+* 相关项目
+
+- [[https://github.com/xuchunyang/chinese-word-at-point.el][chinese-word-at-point.el]] :: 另一个使用jieba分词进行中文分词的package.
+- [[https://github.com/tumashu/pyim][pyim]] :: 一个Emacs内部的中文输入法, 提供了按其输入词库进行分词的功能.
