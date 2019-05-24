@@ -45,15 +45,7 @@
   :prefix "jieba-")
 
 (defcustom jieba-server-start-args
-  `("node"
-    ,(let* ((this-file (cond
-                        (load-in-progress load-file-name)
-                        ((and (boundp 'byte-compile-current-file)
-                              byte-compile-current-file)
-                         byte-compile-current-file)
-                        (t (buffer-file-name))))
-            (dir (file-name-directory this-file)))
-       (expand-file-name "simple-jieba-server.js" dir)))
+  `("node" "simple-jieba-server.js")
   ""
   :type 'list
   :group 'jieba)
@@ -124,8 +116,19 @@
               (jsonrpc-connection-receive conn
                                           json-message))))))))
 
+(defun jieba--current-dir ()
+  (let* ((this-file (cond
+                     (load-in-progress load-file-name)
+                     ((and (boundp 'byte-compile-current-file)
+                           byte-compile-current-file)
+                      byte-compile-current-file)
+                     (t (buffer-file-name))))
+         (dir (file-name-directory this-file)))
+    dir))
+
 (defun jieba--connect ()
   (let* ((name "JIEBA-SERVER")
+         (default-directory (jieba--current-dir))
          (conn (jieba-connection
                 :process (lambda ()
                            (make-process
@@ -137,7 +140,7 @@
                             :stderr (get-buffer-create
                                      (format "*%s stderr*" name)))))))
     ;; Ask server to load default dict.
-    (jsonrpc-async-request conn :hello nil)
+    (jsonrpc-notify conn :hello nil)
     (setq jieba--current-connection conn)))
 
 (defun jieba-ensure (&optional interactive-restart?)
@@ -265,16 +268,28 @@ If INTERACTIVE-START? is non-nil, will ask user to start server first."
         (goto-char dest))))))
 
 ;;;###autoload
-(defun jieba-forward-word (arg)
+(defun jieba-forward-word (&optional arg)
   (interactive "p")
+  (setq arg (or arg 1))
   (let ((backward? (< arg 0)))
     (dotimes (_ (abs arg))
       (jieba--move-chinese-word backward?))))
 
 ;;;###autoload
-(defun jieba-backward-word (arg)
+(defun jieba-backward-word (&optional arg)
   (interactive "p")
+  (setq arg (or arg 1))
   (jieba-forward-word (- arg)))
+
+;;;###autoload
+(defun jieba-kill-word (arg)
+  (interactive "p")
+  (kill-region (point) (progn (jieba-forward-word arg) (point))))
+
+;;;###autoload
+(defun jieba-backward-kill-word (arg)
+  (interactive "p")
+  (jieba-kill-word (- arg)))
 
 ;;;###autoload
 (defun jieba-mark-word ()
@@ -290,6 +305,8 @@ If INTERACTIVE-START? is non-nil, will ask user to start server first."
   (let ((map (make-sparse-keymap)))
     (define-key map [remap forward-word] #'jieba-forward-word)
     (define-key map [remap backward-word] #'jieba-backward-word)
+    (define-key map [remap kill-word] #'jieba-kill-word)
+    (define-key map [remap backward-kill-word] #'jieba-backward-kill-word)
     map))
 
 ;;;###autoload
