@@ -1,0 +1,63 @@
+#+TITLE: Jieba.el -- 在Emacs中使用jieba中文分词
+* 简介
+
+众所周知, Emacs并没有内置中文分词系统, 以至于 =forward-word= 和 =backward-word=
+以及 =kill-word= 等以单词为单位的操作只能粗暴的标点符号进行确定所谓"词汇",
+(其实是中文里的句子).
+
+=jieba.el= 利用[[https://github.com/yanyiwu/nodejieba][nodejieba]]对buffer中的中文句子进行分割, 并且增强了上述以词为单位的
+操作, 使使用Emacs处理中文文本的体验更加流畅.
+
+
+* 安装方式
+
+** 安装nodejieba
+以管理员权限执行以下命令安装nodejieba
+
+#+BEGIN_SRC sh
+npm install -g nodejieba
+#+END_SRC
+
+如果你已经有了管理员权限却仍然提示权限不足, 尝试
+
+#+BEGIN_SRC sh
+npm install -g --unsafe-perm nodejieba
+#+END_SRC
+
+** 安装jieba.el
+
+从[[https://elpa.gnu.org/packages/][GNU ELPA]]安装jieba.el的依赖[[https://elpa.gnu.org/packages/jsonrpc.html][jsonrpc]],
+然后将jieba.el放入你emacs的 =load-path= 中, 在 =.emacs= 文件中写入
+
+#+BEGIN_SRC elisp
+(require 'jieba)
+(jieba-mode)
+#+END_SRC
+
+你也可以使用 =use-package=
+
+#+BEGIN_SRC elisp
+(use-package jieba
+  :load-path "/path/to/jieba"
+  :command jieba-mode
+  :init (jieba-mode))
+#+END_SRC
+
+* 使用方式
+
+启用 =jieba-mode= 后, =jieba.el= 会自动重新映射 =forward-word=, =backward-word=,
+=kill-word=, =backward-kill-word=, 到对应的jieba增强版本上.
+
+你也可以自行定义 =jieba-mode-map= 来修改这些操作的按键绑定
+
+| 按键名                     | Action                   |
+|----------------------------+--------------------------|
+| =jieba-forward-word=       | 向前移动一个中英文单词   |
+| =jibea-bacward-word=       | 向后移动一个中英文单词   |
+| =jieba-kill-word=          | 删除光标后的一个中文单词 |
+| =jieba-backward-kill-word= | 删除光标前的一个中文单词 |
+| =jieba-mark-word=          | 选中光标下的一个中文单词 |
+
+* 协助开发
+
+欢迎提交PR和Issue report.
