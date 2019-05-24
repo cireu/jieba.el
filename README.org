@@ -8,6 +8,9 @@
 =jieba.el= 利用[[https://github.com/yanyiwu/nodejieba][nodejieba]]对buffer中的中文句子进行分割, 并且增强了上述以词为单位的
 操作, 使使用Emacs处理中文文本的体验更加流畅.
 
+注: 该图片文字来源于[[https://zh.wikipedia.org/zh-cn/GNU%25E9%2580%259A%25E7%2594%25A8%25E5%2585%25AC%25E5%2585%25B1%25E8%25AE%25B8%25E5%258F%25AF%25E8%25AF%2581][维基百科]], 遵循CC BY-SA 3.0条款使用
+
+[[file:screenshot.gif][Screenshot]]
 
 * 安装方式
 
