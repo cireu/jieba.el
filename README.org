@@ -69,4 +69,3 @@ npm install -g --unsafe-perm nodejieba
 
 - [[https://github.com/xuchunyang/chinese-word-at-point.el][chinese-word-at-point.el]] :: 另一个使用jieba分词进行中文分词的package.
 - [[https://github.com/tumashu/pyim][pyim]] :: 一个Emacs内部的中文输入法, 提供了按其输入词库进行分词的功能.
-

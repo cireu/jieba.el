@@ -55,6 +55,15 @@
                  (const :tag "HMM Segment Algorithm" hmm)
                  (const :tag "Mix Segment Algorithm" mix)))
 
+(defcustom jieba-use-cache t
+  "Use cache to cache the result of segmentation if non-nil."
+  :type 'boolean
+  :group 'jieba)
+
+(defcustom jieba-current-backend 'node
+  "The Jieba backend in using."
+  :group 'jieba)
+
 ;;;
 
 
@@ -104,9 +113,8 @@
 
 (defun jieba--cache-gc ())
 
-(defvar jieba-use-cache nil)
-
 (cl-defmethod jieba-do-split :around ((_backend t) string)
+  "Access cache if used."
   (let ((not-found (make-symbol "hash-not-found"))
         result)
     (if (not jieba-use-cache)
@@ -247,10 +255,5 @@
 ;; Define text object
 (put 'jieba-chinese-word
      'bounds-of-thing-at-point 'jieba-chinese-word-atpt-bounds)
-
-;; Load backends
-;; (require 'jieba-node)
-;; (require 'jieba-ejieba)
-;; (require 'jieba-py)
 
 ;;; jieba.el ends here
