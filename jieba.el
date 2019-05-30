@@ -64,8 +64,7 @@
   "The Jieba backend in using."
   :group 'jieba)
 
-;;;
-
+;;; Utils
 
 (defun jieba--current-dir ()
   (let* ((this-file (cond
@@ -76,6 +75,8 @@
                      (t (buffer-file-name))))
          (dir (file-name-directory this-file)))
     dir))
+
+;;; Backend Access API
 
 (cl-defgeneric jieba-do-split (backend str))
 
@@ -89,21 +90,20 @@
 
 (cl-defgeneric jieba--backend-available? (backend))
 
-(defvar jieba-current-backend nil)
-
 (defun jieba-ensure (&optional interactive-restart?)
   (interactive "P")
   (if (not (jieba--backend-available? jieba-current-backend))
       (jieba--initialize-backend jieba-current-backend)
     (when (and
            interactive-restart?
-           (y-or-n-p "Jieba backend is running now, do you want to restart it?"))
+           (y-or-n-p
+            "Jieba backend is running now, do you want to restart it?"))
       (jieba--shutdown-backend jieba-current-backend)
       (jieba--initialize-backend jieba-current-backend))))
 
 (defun jieba--assert-server ()
   "Assert the server is running, throw an error when assertion failed."
-  (or (jieba-backend-available? jieba-current-backend)
+  (or (jieba--backend-available? jieba-current-backend)
       (error "[JIEBA] Current backend: %s is not available!"
              jieba-current-backend)))
 
