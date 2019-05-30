@@ -31,7 +31,6 @@
 ;;; Code:
 
 (require 'eieio)
-(require 'jsonrpc)
 (require 'thingatpt)
 
 (eval-when-compile
@@ -56,65 +55,17 @@
                  (const :tag "HMM Segment Algorithm" hmm)
                  (const :tag "Mix Segment Algorithm" mix)))
 
-;;; JSONRPC Setup
+(defcustom jieba-use-cache t
+  "Use cache to cache the result of segmentation if non-nil."
+  :type 'boolean
+  :group 'jieba)
 
-(defvar jieba--current-connection nil)
+(defcustom jieba-current-backend 'node
+  "The Jieba backend in using."
+  :group 'jieba)
 
-(defun jieba--json-read-string (s)
-  (if (fboundp 'json-parse-string)
-      (json-parse-string s
-                         :object-type 'plist
-                         :false-object :json-false
-                         :null-object nil)
-    (let ((json-object-type 'plist)
-          (json-false :json-false)
-          (json-null nil))
-      (json-read-from-string s))))
+;;;
 
-(defclass jieba-connection (jsonrpc-process-connection) ()
-  "A connection based on stdio to contact with jieba server.")
-
-(cl-defmethod jsonrpc-connection-send ((conn jieba-connection)
-                                       &rest args
-                                       &key method &allow-other-keys)
-  "Override send method, because we just send JSON without HTTP headers."
-  (when method
-    (plist-put args :method
-               (cond ((keywordp method) (substring (symbol-name method) 1))
-                     ((and method (symbolp method)) (symbol-name method)))))
-  (let* ((message `(:jsonrpc "2.0" ,@args))
-         (json (jsonrpc--json-encode message)))
-    (process-send-string
-     (jsonrpc--process conn)
-     json)))
-
-(cl-defmethod initialize-instance ((conn jieba-connection) _slots)
-  (cl-call-next-method)
-  ;; Set a new process filter for `jieba-connection'.
-  ;; Because our messages don't contain HTTP headers.
-  (let ((proc (jsonrpc--process conn)))
-    (when proc
-      (set-process-filter proc #'jieba--process-filter))))
-
-(defun jieba--process-filter (proc string)
-  "Called when new data STRING has arrived for PROC."
-  (when (buffer-live-p (process-buffer proc))
-    (with-current-buffer (process-buffer proc)
-      (let ((inhibit-read-only t))
-        (goto-char (process-mark proc))
-        (insert string)
-        (set-marker (process-mark proc) (point))
-        (let ((json-message (condition-case-unless-debug oops
-                                (jieba--json-read-string string)
-                              (error
-                               (jsonrpc--warn "Invalid JSON: %s %s"
-                                              (cdr oops) (buffer-string))
-                               nil)))
-              (conn (process-get proc 'jsonrpc-connection)))
-          (when json-message
-            (with-temp-buffer
-              (jsonrpc-connection-receive conn
-                                          json-message))))))))
 
 (defun jieba--current-dir ()
   (let* ((this-file (cond
@@ -126,46 +77,35 @@
          (dir (file-name-directory this-file)))
     dir))
 
-(defun jieba--connect ()
-  (let* ((name "JIEBA-SERVER")
-         (default-directory (jieba--current-dir))
-         (conn (jieba-connection
-                :process (lambda ()
-                           (make-process
-                            :name name
-                            :command jieba-server-start-args
-                            :coding 'utf-8-emacs-unix
-                            :noquery t
-                            :connection-type 'pipe
-                            :stderr (get-buffer-create
-                                     (format "*%s stderr*" name)))))))
-    ;; Ask server to load default dict.
-    (jsonrpc-notify conn :hello nil)
-    (setq jieba--current-connection conn)))
+(cl-defgeneric jieba-do-split (backend str))
+
+(cl-defgeneric jieba-load-dict (backend dicts))
+
+(cl-defgeneric jieba--initialize-backend (_backend)
+  nil)
+
+(cl-defgeneric jieba--shutdown-backend (_backend)
+  nil)
+
+(cl-defgeneric jieba--backend-available? (backend))
+
+(defvar jieba-current-backend nil)
 
 (defun jieba-ensure (&optional interactive-restart?)
   (interactive "P")
-  (if (not (and (cl-typep jieba--current-connection 'jsonrpc-connection)
-                (jsonrpc-running-p jieba--current-connection)))
-      (jieba--connect)
+  (if (not (jieba--backend-available? jieba-current-backend))
+      (jieba--initialize-backend jieba-current-backend)
     (when (and
            interactive-restart?
-           (y-or-n-p "Jieba server is running now, do you want to restart it?"))
-      (jsonrpc-shutdown jieba--current-connection)
-      (jieba--connect))))
+           (y-or-n-p "Jieba backend is running now, do you want to restart it?"))
+      (jieba--shutdown-backend jieba-current-backend)
+      (jieba--initialize-backend jieba-current-backend))))
 
-(defun jieba--assert-server (&optional interactive-start?)
-  "Assert the server is running, throw an error when assertion failed.
-
-If INTERACTIVE-START? is non-nil, will ask user to start server first."
-  (when (not (and (cl-typep jieba--current-connection 'jieba-connection)
-                  (jsonrpc-running-p jieba--current-connection)))
-    (cond
-     ((and interactive-start?
-           (y-or-n-p "Do you want to start jieba server?"))
-      (jieba-ensure))
-     (t
-      (error "[JIEBA] Jieba server is not running now!")))))
+(defun jieba--assert-server ()
+  "Assert the server is running, throw an error when assertion failed."
+  (or (jieba-backend-available? jieba-current-backend)
+      (error "[JIEBA] Current backend: %s is not available!"
+             jieba-current-backend)))
 
 ;;; Data Cache
 
@@ -173,32 +113,25 @@ If INTERACTIVE-START? is non-nil, will ask user to start server first."
 
 (defun jieba--cache-gc ())
 
-;;;
+(cl-defmethod jieba-do-split :around ((_backend t) string)
+  "Access cache if used."
+  (let ((not-found (make-symbol "hash-not-found"))
+        result)
+    (if (not jieba-use-cache)
+        (cl-call-next-method)
+      (setq result (gethash string jieba--cache not-found))
+      (if (eq not-found result)
+          (prog1 (setq result (cl-call-next-method))
+            (puthash string result jieba--cache))
+        result))))
 
-(defun jieba-load-dict (dicts)
-  (jsonrpc-async-request jieba--current-connection :loadDict
-                         (vconcat dicts)
-                         :success-fn (lambda (result)
-                                       (message "[JIEBA] %s" result))
-                         :error-fn (cl-function
-                                    (lambda (&key message data &allow-other-keys)
-                                      (error "[JIEBA] Remote Error: %s %s"
-                                             message data)))))
 
 ;;; Export function
 
 (defvar jieba--single-chinese-char-re "\\cC")
 
 (defun jieba-split-chinese-word (str)
-  (let* ((not-found (make-symbol "hash-not-found"))
-         (result (gethash str jieba--cache not-found)))
-    (if (eq result not-found)
-        (prog1
-            (setq result (jsonrpc-request
-                          jieba--current-connection :split
-                          str))
-          (puthash str result jieba--cache))
-      result)))
+  (jieba-do-split jieba-current-backend str))
 
 (defsubst jieba-chinese-word? (s)
   "Return t when S is a real chinese word (All its chars are chinese char.)"
