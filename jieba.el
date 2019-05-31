@@ -167,23 +167,22 @@
 
 
 (defun jieba--move-chinese-word (backward?)
-  (cl-labels ((find-dest
-               (backward?)
-               (pcase (jieba-chinese-word-atpt-bounds)
-                 (`(,beg . ,end)
-                  (if backward? beg end))))
+  (cl-labels
+      ((find-dest (backward?)
+                  (pcase (jieba-chinese-word-atpt-bounds)
+                    (`(,beg . ,end)
+                     (if backward? beg end))))
 
-              (try-backward-move
-               (backward?)
-               (let (pnt beg)
-                 (save-excursion
-                   (if backward? (backward-char) (forward-char))
-                   (setq pnt (point))
-                   (setq beg (find-dest backward?)))
-                 (goto-char pnt)
-                 (when (or (null beg)
-                           (not (= beg pnt)))
-                   (jieba--move-chinese-word backward?)))))
+       (try-backward-move (backward?)
+                          (let (pnt beg)
+                            (save-excursion
+                              (if backward? (backward-char) (forward-char))
+                              (setq pnt (point))
+                              (setq beg (find-dest backward?)))
+                            (goto-char pnt)
+                            (when (or (null beg)
+                                      (not (= beg pnt)))
+                              (jieba--move-chinese-word backward?)))))
 
     (let* ((dest (find-dest backward?))
            (cur (point)))
@@ -255,5 +254,8 @@
 ;; Define text object
 (put 'jieba-chinese-word
      'bounds-of-thing-at-point 'jieba-chinese-word-atpt-bounds)
+
+(cl-eval-when (load eval)
+  (require 'jieba-node))
 
 ;;; jieba.el ends here
