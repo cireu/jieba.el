@@ -66,7 +66,7 @@
 
 ;;; Utils
 
-(defun jieba--current-dir ()
+(defconst jieba--current-dir
   (let* ((this-file (cond
                      (load-in-progress load-file-name)
                      ((and (boundp 'byte-compile-current-file)
@@ -74,7 +74,12 @@
                       byte-compile-current-file)
                      (t (buffer-file-name))))
          (dir (file-name-directory this-file)))
-    dir))
+    dir)
+  "Directory of jieba.")
+
+(defun jieba--current-dir ()
+  "Return the directory of jieba."
+  jieba--current-dir)
 
 ;;; Backend Access API
 
