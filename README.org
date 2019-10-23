@@ -15,16 +15,10 @@
 * 安装方式
 
 ** 安装nodejieba
-以管理员权限执行以下命令安装nodejieba
+执行以下命令安装nodejieba
 
 #+BEGIN_SRC sh
-npm install -g nodejieba
-#+END_SRC
-
-如果你已经有了管理员权限却仍然提示权限不足, 尝试
-
-#+BEGIN_SRC sh
-npm install -g --unsafe-perm nodejieba
+npm install
 #+END_SRC
 
 ** 安装jieba.el
