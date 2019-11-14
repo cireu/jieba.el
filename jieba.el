@@ -142,7 +142,7 @@
   (and (string-match-p (format "%s\\{%d\\}"
                                jieba--single-chinese-char-re
                                (length s)) s)
-       (not (eq s ""))))
+       t))
 
 (defalias 'jieba-chinese-word-p 'jieba-chinese-word?)
 
@@ -150,16 +150,16 @@
   (let ((pnt (point)) (beg (point)) (end (point)))
     (save-excursion
       (if backward?
-	  (progn (backward-word)
-		 (setq beg (point))
-		 (when (looking-at jieba--single-chinese-char-re)
-		   (forward-word)
-		   (setq end (if (< pnt (point)) pnt (point)))))
-	(forward-word)
-	(setq end (point))
-	(when (looking-back jieba--single-chinese-char-re pnt)
-	  (backward-word)
-	  (setq beg (if (> pnt (point)) pnt (point))))))
+          (progn (backward-word)
+                 (setq beg (point))
+                 (when (looking-at jieba--single-chinese-char-re)
+                   (forward-word)
+                   (setq end (if (< pnt (point)) pnt (point)))))
+        (forward-word)
+        (setq end (point))
+        (when (looking-back jieba--single-chinese-char-re pnt)
+          (backward-word)
+          (setq beg (if (> pnt (point)) pnt (point))))))
     (cons beg end)))
 
 (defun jieba--chinese-word-atpt-bounds (beg end)
@@ -167,17 +167,17 @@
   (let ((word (buffer-substring-no-properties beg end)))
     (when (jieba-chinese-word? word)
       (let ((cur (point))
-	    (index beg)
-	    (old-index beg))
-	(cl-block retval
-	  (mapc (lambda (x)
-		  (cl-incf index (length x))
-		  (cond
-		   ((or (< cur index) (= index end))
-		    (cl-return-from retval (cons old-index index)))
-		   (t
-		    (setq old-index index))))
-		(jieba-split-chinese-word word)))))))
+            (index beg)
+            (old-index beg))
+        (cl-block retval
+          (mapc (lambda (x)
+                  (cl-incf index (length x))
+                  (cond
+                   ((or (< cur index) (= index end))
+                    (cl-return-from retval (cons old-index index)))
+                   (t
+                    (setq old-index index))))
+                (jieba-split-chinese-word word)))))))
 
 
 (defun jieba--move-chinese-word (backward?)
@@ -185,8 +185,8 @@
     (`(,beg . ,end)
      (pcase (jieba--chinese-word-atpt-bounds beg end)
        (`(,start . ,finish)
-	(setq beg start)
-	(setq end finish)))
+        (setq beg start)
+        (setq end finish)))
      (goto-char (if backward? beg end)))))
 
 
