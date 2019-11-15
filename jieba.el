@@ -31,7 +31,6 @@
 ;;; Code:
 
 (require 'eieio)
-(require 'thingatpt)
 
 (eval-when-compile
   (require 'cl-lib))
@@ -147,62 +146,49 @@
 
 (defalias 'jieba-chinese-word-p 'jieba-chinese-word?)
 
-;;;###autoload
-(defun jieba-chinese-word-atpt-bounds ()
+(defun jieba--segment-atpt-bounds (backward?)
+  (let ((pnt (point)) (beg (point)) (end (point)))
+    (save-excursion
+      (if backward?
+          (progn (backward-word)
+                 (setq beg (point))
+                 (when (looking-at jieba--single-chinese-char-re)
+                   (forward-word)
+                   (setq end (if (< pnt (point)) pnt (point)))))
+        (forward-word)
+        (setq end (point))
+        (when (looking-back jieba--single-chinese-char-re pnt)
+          (backward-word)
+          (setq beg (if (> pnt (point)) pnt (point))))))
+    (cons beg end)))
+
+(defun jieba--chinese-word-atpt-bounds (beg end)
   (jieba--assert-server)
-  (pcase (bounds-of-thing-at-point 'word)
-    (`(,beg . ,end)
-     (let ((word (buffer-substring-no-properties beg end)))
-       (when (jieba-chinese-word? word)
-         (let ((cur (point))
-               (index beg)
-               (old-index beg))
-           (cl-block retval
-             (mapc (lambda (x)
-                     (cl-incf index (length x))
-                     (cond
-                      ((or (< old-index cur index)
-                           (= old-index cur))
-                       (cl-return-from retval (cons old-index index)))
-                      ((= index end)
-                       (cl-return-from retval (cons old-index index)))
-                      (t
-                       (setq old-index index))))
-                   (jieba-split-chinese-word word)))))))))
+  (let ((word (buffer-substring-no-properties beg end)))
+    (when (jieba-chinese-word? word)
+      (let ((cur (point))
+            (index beg)
+            (old-index beg))
+        (cl-block retval
+          (mapc (lambda (x)
+                  (cl-incf index (length x))
+                  (cond
+                   ((or (< cur index) (= index end))
+                    (cl-return-from retval (cons old-index index)))
+                   (t
+                    (setq old-index index))))
+                (jieba-split-chinese-word word)))))))
 
 
 (defun jieba--move-chinese-word (backward?)
-  (cl-labels
-      ((find-dest (backward?)
-                  (pcase (jieba-chinese-word-atpt-bounds)
-                    (`(,beg . ,end)
-                     (if backward? beg end))))
+  (pcase (jieba--segment-atpt-bounds backward?)
+    (`(,beg . ,end)
+     (pcase (jieba--chinese-word-atpt-bounds beg end)
+       (`(,start . ,finish)
+        (setq beg start)
+        (setq end finish)))
+     (goto-char (if backward? beg end)))))
 
-       (try-backward-move (backward?)
-                          (let (pnt beg)
-                            (save-excursion
-                              (if backward? (backward-char) (forward-char))
-                              (setq pnt (point))
-                              (setq beg (find-dest backward?)))
-                            (goto-char pnt)
-                            (when (or (null beg)
-                                      (not (= beg pnt)))
-                              (jieba--move-chinese-word backward?)))))
-
-    (let* ((dest (find-dest backward?))
-           (cur (point)))
-      (cond
-       ((null dest)
-        (if backward?
-            (if (looking-back jieba--single-chinese-char-re
-                              (car (bounds-of-thing-at-point 'word)))
-                (try-backward-move backward?)
-              (backward-word))
-          (forward-word)))
-       ((= dest cur)
-        (try-backward-move backward?))
-       (t
-        (goto-char dest))))))
 
 ;;;###autoload
 (defun jieba-forward-word (&optional arg)
@@ -229,11 +215,10 @@
   (jieba-kill-word (- arg)))
 
 ;;;###autoload
-(defun jieba-mark-word ()
-  (interactive)
-  (end-of-thing 'jieba-chinese-word)
+(defun jieba-mark-word (&optional arg)
+  (interactive "p")
   (set-mark (point))
-  (beginning-of-thing 'jieba-chinese-word))
+  (jieba-forward-word arg))
 
 ;;; Minor mode
 
@@ -255,10 +240,6 @@
   (when jieba-mode (jieba-ensure t)))
 
 (provide 'jieba)
-
-;; Define text object
-(put 'jieba-chinese-word
-     'bounds-of-thing-at-point 'jieba-chinese-word-atpt-bounds)
 
 (cl-eval-when (load eval)
   (require 'jieba-node))
