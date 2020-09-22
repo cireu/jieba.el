@@ -18,7 +18,7 @@
 执行以下命令安装nodejieba
 
 #+BEGIN_SRC sh
-npm install
+npm install nodejieba
 #+END_SRC
 
 ** 安装jieba.el
