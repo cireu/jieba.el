@@ -36,7 +36,7 @@ npm install
 #+BEGIN_SRC elisp
 (use-package jieba
   :load-path "/path/to/jieba"
-  :command jieba-mode
+  :commands jieba-mode
   :init (jieba-mode))
 #+END_SRC
 
